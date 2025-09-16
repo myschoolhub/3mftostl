@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3MF to STL Converter</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        .container {
+            background-color: #fff;
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 600px;
+        }
+        h1 {
+            color: #1a237e;
+            margin-bottom: 0.5rem;
+        }
+        p {
+            margin-bottom: 2rem;
+            color: #555;
+        }
+        .file-input-container {
+            margin-bottom: 2rem;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .custom-file-upload {
+            border: 2px dashed #999;
+            background-color: #fafafa;
+            color: #666;
+            padding: 1.5rem 2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-block;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        .custom-file-upload:hover {
+            background-color: #e8eaf6;
+            border-color: #1a237e;
+            color: #1a237e;
+        }
+        .download-btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            display: none; /* Initially hidden */
+            margin-top: 1rem;
+            transition: background-color 0.3s ease;
+        }
+        .download-btn:hover {
+            background-color: #45a049;
+        }
+        #status {
+            margin-top: 1rem;
+            font-weight: bold;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>3MF to STL Converter</h1>
+        <p>Select a .3mf file to convert it to a .stl file. All processing is done locally in your browser.</p>
+
+        <div class="file-input-container">
+            <label for="file-upload" class="custom-file-upload">
+                <span id="upload-text">Drag & Drop or Click to Upload 3MF File</span>
+            </label>
+            <input id="file-upload" type="file" accept=".3mf"/>
+        </div>
+
+        <div id="status"></div>
+        <a id="download-link" class="download-btn" download="converted.stl">Download STL File</a>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three-3mf-loader@1.0.1/dist/THREE.3MFLoader.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const fileInput = document.getElementById('file-upload');
+            const statusElement = document.getElementById('status');
+            const downloadLink = document.getElementById('download-link');
+            const uploadText = document.getElementById('upload-text');
+
+            // Handle file input changes
+            fileInput.addEventListener('change', handleFile);
+
+            // Handle drag and drop
+            const dropArea = document.querySelector('.custom-file-upload');
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, () => dropArea.classList.add('active'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, () => dropArea.classList.remove('active'), false);
+            });
+
+            dropArea.addEventListener('drop', handleDrop, false);
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    handleFile({ target: { files: files } });
+                }
+            }
+
+            function handleFile(event) {
+                const file = event.target.files[0];
+                if (!file) {
+                    statusElement.textContent = 'No file selected.';
+                    return;
+                }
+
+                if (file.name.split('.').pop().toLowerCase() !== '3mf') {
+                    statusElement.textContent = 'Please select a valid .3mf file.';
+                    return;
+                }
+
+                uploadText.textContent = file.name;
+                statusElement.textContent = 'Processing... This may take a moment.';
+                downloadLink.style.display = 'none';
+
+                const reader = new FileReader();
+
+                reader.onload = function (e) {
+                    try {
+                        const buffer = e.target.result;
+                        const loader = new THREE.3MFLoader();
+                        const object = loader.parse(buffer);
+
+                        if (!object || !object.children || object.children.length === 0) {
+                             statusElement.textContent = 'Error: No valid mesh found in the 3MF file.';
+                             return;
+                        }
+
+                        // We assume the first child is the main mesh
+                        const mesh = object.children[0];
+                        const geometry = mesh.geometry;
+
+                        if (!geometry) {
+                             statusElement.textContent = 'Error: Could not extract geometry from 3MF file.';
+                             return;
+                        }
+
+                        const exporter = new THREE.STLExporter();
+                        const stlData = exporter.parse(geometry, { binary: true });
+
+                        const blob = new Blob([stlData], { type: 'application/octet-stream' });
+                        const url = URL.createObjectURL(blob);
+                        downloadLink.href = url;
+                        downloadLink.download = file.name.replace(/\.[^/.]+$/, "") + '.stl';
+                        downloadLink.style.display = 'block';
+                        statusElement.textContent = 'Conversion successful! Click the button to download.';
+
+                    } catch (error) {
+                        console.error('Conversion failed:', error);
+                        statusElement.textContent = 'Conversion failed. Please ensure the file is a valid 3MF. Details: ' + error.message;
+                    }
+                };
+
+                reader.onerror = function (error) {
+                    console.error('File read error:', error);
+                    statusElement.textContent = 'Error reading the file.';
+                };
+
+                reader.readAsArrayBuffer(file);
+            }
+
+            // Exporter for STL
+            // This is a minimal implementation, you'd usually import a dedicated library
+            // but for a single file, it's included here.
+            THREE.STLExporter = function () {};
+            THREE.STLExporter.prototype = {
+                constructor: THREE.STLExporter,
+                parse: function (geometry, options) {
+                    if (options === undefined) options = {};
+                    const binary = options.binary !== undefined ? options.binary : false;
+                    const result = this._parse(geometry, binary);
+                    return result;
+                },
+                _parse: function (geometry, binary) {
+                    const triangleCount = geometry.attributes.position.count / 3;
+                    const header = new Uint8Array(80);
+                    const view = new DataView(new ArrayBuffer(84 + (triangleCount * 50)));
+                    let offset = 0;
+                    view.setUint32(offset, triangleCount, true);
+                    offset += 4;
+                    for (let i = 0; i < triangleCount; i++) {
+                        const vA = new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, i * 3);
+                        const vB = new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, i * 3 + 1);
+                        const vC = new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, i * 3 + 2);
+
+                        const normal = new THREE.Vector3().crossVectors(vB.sub(vA), vC.sub(vA)).normalize();
+
+                        view.setFloat32(offset, normal.x, true);
+                        offset += 4;
+                        view.setFloat32(offset, normal.y, true);
+                        offset += 4;
+                        view.setFloat32(offset, normal.z, true);
+                        offset += 4;
+
+                        view.setFloat32(offset, vA.x, true);
+                        offset += 4;
+                        view.setFloat32(offset, vA.y, true);
+                        offset += 4;
+                        view.setFloat32(offset, vA.z, true);
+                        offset += 4;
+
+                        view.setFloat32(offset, vB.x, true);
+                        offset += 4;
+                        view.setFloat32(offset, vB.y, true);
+                        offset += 4;
+                        view.setFloat32(offset, vB.z, true);
+                        offset += 4;
+
+                        view.setFloat32(offset, vC.x, true);
+                        offset += 4;
+                        view.setFloat32(offset, vC.y, true);
+                        offset += 4;
+                        view.setFloat32(offset, vC.z, true);
+                        offset += 4;
+
+                        view.setUint16(offset, 0, true);
+                        offset += 2;
+                    }
+                    return new Uint8Array(view.buffer);
+                }
+            };
+        });
+    </script>
+</body>
+</html>
